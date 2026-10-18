@@ -52,6 +52,16 @@ class Bluetooth(unittest.TestCase):
         self.assertEqual((item["id"], item["icon"], item["level"]), ("aa:bb:cc:dd:ee:ff", "audio-headphones", 100))
 
 
+class Names(unittest.TestCase):
+    def test_meaningless_names_become_generic(self):
+        for name, kind, expected in (("2.4G RF Keyboard & Mouse", "keyboard", "Wireless Keyboard"),
+                                     ("USB Receiver", "mouse", "Wireless Mouse"),
+                                     ("Headset", "headset", "Wireless Headset"),
+                                     ("Acme M1 Pro", "mouse", "Acme M1 Pro"),
+                                     ("Arctis Nova 7", "headset", "Arctis Nova 7")):
+            self.assertEqual(chargecheck.row("x", name, kind)["name"], expected)
+
+
 class Dedupe(unittest.TestCase):
     def test_bluetooth_and_receiver_of_one_keyboard_show_once(self):
         silent = chargecheck.row("320f5088", "Acme K87", "keyboard", detail="Keyboard did not answer")
@@ -82,6 +92,16 @@ class Headsets(unittest.TestCase):
         status["headset"]["headset_power_status"]["value"] = "on"
         status["headset"]["cable_charging"] = {"value": "off"}
         self.assertEqual(chargecheck.asm_row(status)["state"], "discharging")
+
+    def test_headset_name_comes_from_its_usb_audio_device(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for dev, product, cls in (("1-3", "Some Mouse", "03"), ("1-5.4", "Nova Headset", "01")):
+                write(root / dev / "idVendor", "1038\n")
+                write(root / dev / "product", product + "\n")
+                write(root / dev / f"{dev}:1.0" / "bInterfaceClass", cls + "\n")
+            self.assertEqual(chargecheck.usb_audio_name("1038", root), "Nova Headset")
+            self.assertIsNone(chargecheck.usb_audio_name("046d", root))
 
     def test_headsetcontrol_states(self):
         for status, expected in [("BATTERY_CHARGING", "charging"), ("BATTERY_AVAILABLE", "discharging")]:

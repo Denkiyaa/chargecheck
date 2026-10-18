@@ -23,6 +23,8 @@ mouse, keyboard, headset, earbuds and controllers in one strip.
 | Receiver query | 2.4 GHz keyboard receivers that don't report a battery to the kernel |
 
 The device type and icon come from the device's input capabilities, not from a list of known models.
+Names are the ones devices report about themselves. When a receiver only calls itself something
+like "2.4G Receiver", it is shown as "Wireless Mouse", "Wireless Keyboard" and so on.
 
 ## Install
 

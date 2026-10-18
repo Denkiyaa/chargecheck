@@ -38,9 +38,26 @@ def percent(value):
         return None
 
 
+GENERIC_NAMES = {
+    "mouse": "Wireless Mouse", "keyboard": "Wireless Keyboard", "headset": "Wireless Headset",
+    "headphones": "Wireless Earbuds", "gamepad": "Game Controller", "phone": "Phone",
+    "speaker": "Speaker", "tablet": "Tablet", "other": "Wireless Device",
+}
+# Words that say nothing about the model, as in "2.4G RF Keyboard & Mouse" or "USB Receiver".
+FILLER_WORDS = {"rf", "hid", "device", "keyboard", "mouse", "and", "gaming", "composite", "generic",
+                "optical", "headset", "headphones", "controller", "combo", "mini", "pro", "2.4", "5.8g"}
+
+
+def display_name(name, kind):
+    """The device's own name, or a generic one when it names no model at all."""
+    if name_tokens(name) - FILLER_WORDS:
+        return name
+    return GENERIC_NAMES.get(kind, GENERIC_NAMES["other"])
+
+
 def row(key, name, kind, level=None, state="unknown", detail="", stale=False):
-    return dict(id=key, name=name, icon=ICONS.get(kind, ICONS["other"]), level=percent(level),
-                state=state, detail=detail, stale=stale)
+    return dict(id=key, name=display_name(name, kind), icon=ICONS.get(kind, ICONS["other"]),
+                level=percent(level), state=state, detail=detail, stale=stale)
 
 
 def mac(text):
@@ -142,16 +159,33 @@ def bluez_rows(objects):
     return result
 
 
-def asm_row(status):
+ASM_VENDOR = "1038"  # the only USB vendor whose headsets Arctis Sound Manager drives
+
+
+def usb_audio_name(vendor, root=Path("/sys/bus/usb/devices")):
+    """Product name of the first USB audio device from this vendor, skipping its mice and keyboards."""
+    for device in sorted(root.glob("*")):
+        try:
+            if (device / "idVendor").read_text().strip() != vendor:
+                continue
+            if any((interface / "bInterfaceClass").read_text().strip() == "01"
+                   for interface in device.glob(device.name + ":*")):
+                return (device / "product").read_text().strip()
+        except OSError:
+            continue
+    return None
+
+
+def asm_row(status, name="Headset"):
     """Arctis Sound Manager status; a powered-off headset never shows its retained level."""
     values = {key: value.get("value") for group in status.values() if isinstance(group, dict)
               for key, value in group.items() if isinstance(value, dict)}
     power = values.get("headset_power_status")
     charge = values.get("cable_charging")
     if power in ("off", "offline") and charge != "on":
-        return row("arctis", "Headset", "headset", state="offline", detail="Off or out of range")
+        return row("arctis", name, "headset", state="offline", detail="Off or out of range")
     state = {"on": "charging", "off": "discharging", "plugged_not_charging": "idle"}.get(charge, "unknown")
-    return row("arctis", "Headset", "headset", values.get("headset_battery_charge"), state)
+    return row("arctis", name, "headset", values.get("headset_battery_charge"), state)
 
 
 def headset_row(device):
@@ -214,10 +248,11 @@ def dbus_rows(errors):
         if session.name_has_owner(name):
             asm = True
             proxy = session.get_object(name, "/name/giacomofurlan/ArctisManager/Next/Status")
-            rows.append(asm_row(json.loads(str(dbus.Interface(proxy, name + ".Status").GetStatus(timeout=3)))))
+            status = json.loads(str(dbus.Interface(proxy, name + ".Status").GetStatus(timeout=3)))
+            rows.append(asm_row(status, usb_audio_name(ASM_VENDOR) or "Headset"))
     except (dbus.DBusException, ValueError):
         if asm:
-            rows.append(row("arctis", "Headset", "headset", detail="Could not read status"))
+            rows.append(row("arctis", usb_audio_name(ASM_VENDOR) or "Headset", "headset", detail="Could not read status"))
     return rows, asm
 
 
