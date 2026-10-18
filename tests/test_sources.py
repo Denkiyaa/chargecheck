@@ -52,6 +52,29 @@ class Bluetooth(unittest.TestCase):
         self.assertEqual((item["id"], item["icon"], item["level"]), ("aa:bb:cc:dd:ee:ff", "audio-headphones", 100))
 
 
+class Dedupe(unittest.TestCase):
+    def test_bluetooth_and_receiver_of_one_keyboard_show_once(self):
+        silent = chargecheck.row("320f5088", "Acme K87", "keyboard", detail="Keyboard did not answer")
+        bluetooth = chargecheck.row("d1:02:38:55:18:2d", "Acme K87 BT1", "keyboard", 82)
+        self.assertEqual(chargecheck.dedupe([silent, bluetooth]), [bluetooth])
+        stale = dict(chargecheck.row("320f5088", "Acme K87", "keyboard", 95), stale=True)
+        self.assertEqual(chargecheck.dedupe([bluetooth, stale]), [bluetooth])
+
+    def test_cable_and_idle_receiver_of_one_mouse_show_once(self):
+        receiver_row = dict(chargecheck.row("r", "Acme Mouse 1K", "mouse", state="offline"), vendor="3554")
+        cable = dict(chargecheck.row("c", "Acme M1 Pro", "mouse", 65, "charging"), vendor="3554")
+        self.assertEqual(chargecheck.dedupe([receiver_row, cable]), [cable])
+        other_brand = dict(cable, vendor="046d")
+        self.assertEqual(len(chargecheck.dedupe([receiver_row, other_brand])), 2)
+
+    def test_distinct_devices_stay_separate(self):
+        pads = [chargecheck.row(str(i), "Wireless Controller", "gamepad", 50 + i) for i in range(2)]
+        self.assertEqual(len(chargecheck.dedupe(pads)), 2)
+        mouse = chargecheck.row("m", "Wireless Mouse", "mouse")
+        keyboard = chargecheck.row("k", "Wireless Keyboard", "keyboard")
+        self.assertEqual(len(chargecheck.dedupe([mouse, keyboard])), 2)
+
+
 class Headsets(unittest.TestCase):
     def test_asm_ignores_retained_battery_while_off(self):
         status = {"headset": {"headset_power_status": {"value": "off"}, "headset_battery_charge": {"value": 7}}}

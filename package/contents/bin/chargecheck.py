@@ -105,16 +105,20 @@ def power_supply_rows(root=Path("/sys/class/power_supply")):
             continue
         device = supply / "device"
         name = props.get("POWER_SUPPLY_MODEL_NAME", "")
+        vendor = ""
         try:
             hid = uevent(device / "uevent")
             name = name or hid.get("HID_NAME", "")
             address = mac(hid.get("HID_UNIQ", "")) or mac(supply.name)
-        except OSError:
+            bus, vendor_id, _ = hid.get("HID_ID", "::").split(":")
+            vendor = vendor_id[-4:].lower() if bus == "0003" else ""  # USB only
+        except (OSError, ValueError):
             address = mac(supply.name)
         name = clean_name(name or supply.name)
         kind = kind_from_name(name) or input_kind(device)
         item = row(address or supply.name, name, kind, props.get("POWER_SUPPLY_CAPACITY"),
                    STATES.get(props.get("POWER_SUPPLY_STATUS"), "unknown"))
+        item["vendor"] = vendor
         if props.get("POWER_SUPPLY_ONLINE", "1") != "1":
             item.update(level=None, state="offline", detail="Asleep or off")
         result.append(item)
@@ -217,21 +221,64 @@ def dbus_rows(errors):
     return rows, asm
 
 
+CONNECTION_WORDS = {"bt", "ble", "2.4g", "2.4ghz", "dongle", "receiver", "wireless", "usb"}
+
+
+def name_tokens(name):
+    """Model words of a device name, without connection words like "BT1" or "2.4G Dongle"."""
+    return {word for word in re.findall(r"[\w.]+", name.lower())
+            if word not in CONNECTION_WORDS and not re.fullmatch(r"(bt|ble)\d", word)}
+
+
+def live(item):
+    return item["level"] is not None and not item["stale"]
+
+
+def same_device(a, b):
+    """Same id, or the same device seen over another connection.
+
+    Only checked when one side has no live reading, so two identical
+    controllers in use at once both stay visible. A mouse charging over its
+    cable and its idle receiver share the USB vendor ID and type. A keyboard on
+    Bluetooth shares no ID with its receiver, only its model name.
+    """
+    if a["id"] == b["id"]:
+        return True
+    if live(a) and live(b):
+        return False
+    if a.get("vendor") and a.get("vendor") == b.get("vendor") and a["icon"] == b["icon"]:
+        return True
+    small, large = sorted((name_tokens(a["name"]), name_tokens(b["name"])), key=len)
+    return len(small) >= 2 and small <= large
+
+
+def quality(item):
+    return (live(item), item["level"] is not None, item["state"] != "offline")
+
+
+def dedupe(devices):
+    unique = []
+    for item in devices:
+        match = next((i for i, kept in enumerate(unique) if same_device(kept, item)), None)
+        if match is None:
+            unique.append(item)
+        elif quality(item) > quality(unique[match]):
+            unique[match] = item
+    return unique
+
+
 def collect():
     errors = []
     devices = power_supply_rows()
     for dev, name, result in receiver.keyboards():
-        devices.append(row(dev, name, "keyboard", result.get("level"), result.get("state", "unknown"),
-                           result.get("detail", ""), result.get("stale", False)))
+        item = row(dev, name, "keyboard", result.get("level"), result.get("state", "unknown"),
+                   result.get("detail", ""), result.get("stale", False))
+        item["vendor"] = dev[:4]
+        devices.append(item)
     extra, asm = dbus_rows(errors)
     # Arctis Sound Manager owns the headset's HID interface; don't compete with it.
     devices += extra + ([] if asm else headsetcontrol_rows())
-    seen, unique = set(), []
-    for item in devices:  # Bluetooth HID devices appear both in power_supply and BlueZ
-        if item["id"] not in seen:
-            seen.add(item["id"])
-            unique.append(item)
-    return dict(devices=unique, errors=errors, updated=int(time.time()))
+    return dict(devices=dedupe(devices), errors=errors, updated=int(time.time()))
 
 
 if __name__ == "__main__":
