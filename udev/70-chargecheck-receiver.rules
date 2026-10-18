@@ -1,0 +1,4 @@
+# ChargeCheck: let the logged-in user send the battery query to 2.4 GHz keyboard
+# receivers. Only the vendor control interface (01) is opened up, not the
+# typing interface.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="320f", ATTRS{idProduct}=="5088", ENV{ID_USB_INTERFACE_NUM}=="01", TAG+="uaccess"

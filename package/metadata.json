@@ -1,0 +1,15 @@
+{
+  "KPlugin": {
+    "Id": "io.github.denkiyaa.chargecheck",
+    "Name": "ChargeCheck",
+    "Description": "Battery levels of wireless mice, keyboards, headsets and earbuds",
+    "Icon": "battery",
+    "Version": "1.0.0",
+    "License": "GPL-3.0-or-later",
+    "Authors": [{"Name": "Berkay Sapmaz"}],
+    "Website": "https://github.com/Denkiyaa/chargecheck",
+    "Category": "System Information"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}
