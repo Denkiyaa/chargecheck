@@ -28,6 +28,13 @@ like "2.4G Receiver", it is shown as "Wireless Mouse", "Wireless Keyboard" and s
 
 ## Install
 
+**Without a terminal:** download `chargecheck.plasmoid` from the
+[latest release](https://github.com/Denkiyaa/chargecheck/releases/latest), then right-click the desktop,
+choose **Enter Edit Mode → Add Widgets… → Get New Widgets → Install Widget From Local File…**, and pick it.
+You still need `python-dbus` installed.
+
+**From source:**
+
 ```sh
 sudo pacman -S python-dbus libnotify headsetcontrol   # headsetcontrol is optional
 git clone https://github.com/Denkiyaa/chargecheck
