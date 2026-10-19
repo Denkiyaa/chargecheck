@@ -136,7 +136,9 @@ def power_supply_rows(root=Path("/sys/class/power_supply")):
         item = row(address or supply.name, name, kind, props.get("POWER_SUPPLY_CAPACITY"),
                    STATES.get(props.get("POWER_SUPPLY_STATUS"), "unknown"))
         item["vendor"] = vendor
-        if props.get("POWER_SUPPLY_ONLINE", "1") != "1":
+        # A sleeping device's receiver can still answer, with a level of 0.
+        asleep = item["level"] == 0 and item["state"] not in ("charging", "full")
+        if props.get("POWER_SUPPLY_ONLINE", "1") != "1" or asleep:
             item.update(level=None, state="offline", detail="Asleep or off")
         result.append(item)
     return result

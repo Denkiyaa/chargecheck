@@ -40,6 +40,14 @@ class PowerSupply(unittest.TestCase):
             [item] = chargecheck.power_supply_rows(root)
         self.assertEqual((item["level"], item["state"]), (None, "offline"))
 
+    def test_sleeping_device_reporting_zero_is_offline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.supply(root, "m", "POWER_SUPPLY_SCOPE=Device\nPOWER_SUPPLY_ONLINE=1\nPOWER_SUPPLY_CAPACITY=0\n"
+                                   "POWER_SUPPLY_STATUS=Discharging\nPOWER_SUPPLY_MODEL_NAME=Some Mouse\n")
+            [item] = chargecheck.power_supply_rows(root)
+        self.assertEqual((item["level"], item["state"]), (None, "offline"))
+
 
 class Bluetooth(unittest.TestCase):
     def test_disconnected_devices_are_ignored(self):
