@@ -5,9 +5,10 @@ padded to the full report size. Only that read-only query is sent; no
 configuration, pairing, reset or firmware commands.
 
 Each query is relayed over the air by the receiver and wakes the keyboard, so
-it is only sent while the keyboard is being typed on. A small watcher process
-records the time of the last key event (key contents are discarded); when the
-keyboard is idle the last reading is returned marked as stale.
+it is only sent while the keyboard is being typed on, or while it charges and
+runs on cable power. A small watcher process records the time of the last key
+event (key contents are discarded); when the keyboard is idle the last reading
+is returned marked as stale.
 """
 import json
 import os
@@ -26,6 +27,7 @@ KNOWN = {(0x320F, 0x5088)}
 QUERY_INTERVAL = 300      # while typing, at most one query per 5 minutes
 ACTIVE_WINDOW = 60        # "in use" = a key event within the last minute
 FALLBACK_INTERVAL = 900   # without access to key events, query every 15 minutes
+CHARGING_INTERVAL = 60    # on the cable a query costs no battery
 EV_REP = 1 << 20          # autorepeat capability: marks keyboard event nodes
 
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
@@ -173,23 +175,32 @@ def stale(cached, detail):
 
 
 def battery(dev, node, now=None, activity=None, read=query):
-    """Query only while the keyboard is in use; otherwise return the last reading as stale."""
+    """Query only while the keyboard is in use or charging; otherwise return the last reading as stale."""
     now = time.time() if now is None else now
     try:
         cached = json.loads(cache_file(dev).read_text())
         cached["time"], cached["result"]["level"]
     except (OSError, ValueError, KeyError, TypeError):
         cached = None
-    if activity is not None and now - activity > ACTIVE_WINDOW:
+    charging = bool(cached) and cached["result"].get("state") == "charging"
+    if activity is not None and now - activity > ACTIVE_WINDOW and not charging:
         if cached:
             return stale(cached, "Idle / asleep")
         return {"level": None, "state": "unknown", "detail": "Idle, press a key to read"}
-    interval = QUERY_INTERVAL if activity is not None else FALLBACK_INTERVAL
+    interval = CHARGING_INTERVAL if charging else QUERY_INTERVAL if activity is not None else FALLBACK_INTERVAL
     if cached and now - cached["time"] < interval:
         return cached["result"]
     result = read(node)
     if result.get("level") is None:
-        return stale(cached, "No answer") if cached else result
+        if not cached:
+            return result
+        if charging:  # unplugged and asleep: stop querying until it is typed on again
+            cached["result"]["state"] = "unknown"
+            try:
+                cache_file(dev).write_text(json.dumps(cached))
+            except OSError:
+                pass
+        return stale(cached, "No answer")
     try:
         cache_file(dev).write_text(json.dumps({"time": now, "result": result}))
     except OSError:

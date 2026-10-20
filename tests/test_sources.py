@@ -141,6 +141,18 @@ class Receiver(unittest.TestCase):
             asleep = battery(30_000, 10_090)
             self.assertEqual((asleep["level"], asleep["stale"], read.call_count), (80, True, 1))
 
+    def test_keeps_reading_while_charging(self):
+        read = mock.Mock(return_value={"level": 70, "state": "charging"})
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(receiver, "RUNTIME", Path(tmp)):
+            battery = lambda now: receiver.battery("kb", "/dev/null", now=now, activity=9_990, read=read)
+            battery(10_000)
+            idle = battery(20_000)
+            self.assertEqual((idle["state"], idle.get("stale"), read.call_count), ("charging", None, 2))
+            read.return_value = {"level": None, "state": "unknown"}
+            self.assertTrue(battery(30_000)["stale"])
+            battery(40_000)
+            self.assertEqual(read.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
